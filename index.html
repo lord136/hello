@@ -539,31 +539,31 @@ try {
   var MOON_ICON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>';
   var suggestionCatalog = [
     'what is programming',
-    'meaning of power',
-    'best computers under 50000',
-    'best phone under 20000',
+    'meaning of democracy',
+    'definition of empathy',
+    'meaning of discipline',
+    'what is self respect',
+    'history of the internet',
+    'history of chess',
+    'who is Abdul Kalam',
+    'who is Mahatma Gandhi',
+    'book by Premchand',
+    'book by Tolkien',
+    'author of Hamlet',
+    'weather in Delhi',
+    'weather in Mumbai',
+    'weather in New York',
     'blue jeans from Amazon',
     'running shoes for men',
+    'best computers under 50000',
+    'best phone under 20000',
+    'best headphones for travel',
     'how to make biryani',
     'recipe for cold coffee',
-    'plan my day better',
-    'what is confidence',
-    'what is artificial intelligence',
-    'history of the internet',
-    'why do we dream',
-    'explain stock market simply',
-    'difference between discipline and motivation',
-    'how to stay focused',
-    'morning workout plan',
-    'write a polite leave message',
-    'message my mom I will be late',
-    'best headphones for travel',
-    'compare iPhone and Android',
-    'how to talk confidently',
-    'what is self respect',
-    'ways to reduce stress'
+    'recipe for pasta',
+    'message my mom I will be late'
   ];
-  var suggestionDisplayCount = 4;
+  var suggestionDisplayCount = 3;
 
   function shuffleList(items) {
     var copy = items.slice();
@@ -648,6 +648,24 @@ try {
     suggestRow.innerHTML = '';
   }
 
+  function renderSuggestionItems(items) {
+    if (!suggestRow) return;
+    suggestRow.hidden = false;
+    suggestRow.innerHTML = '';
+    items.forEach(function(item) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'suggest-chip';
+      chip.textContent = item;
+      bindSuggestionChip(chip, item);
+      suggestRow.appendChild(chip);
+    });
+  }
+
+  function showRandomSuggestions() {
+    renderSuggestionItems(shuffleList(suggestionCatalog).slice(0, suggestionDisplayCount));
+  }
+
   function applySuggestion(item) {
     chatIn.value = item;
     resizeComposer();
@@ -679,16 +697,7 @@ try {
 
     if (!raw) {
       suggestions = shuffleList(suggestionCatalog).slice(0, suggestionDisplayCount);
-      suggestRow.hidden = false;
-      suggestRow.innerHTML = '';
-      suggestions.forEach(function(item) {
-        var chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'suggest-chip';
-        chip.textContent = item;
-        bindSuggestionChip(chip, item);
-        suggestRow.appendChild(chip);
-      });
+      renderSuggestionItems(suggestions);
       return;
     }
 
@@ -719,16 +728,7 @@ try {
       return;
     }
 
-    suggestRow.hidden = false;
-    suggestRow.innerHTML = '';
-    suggestions.forEach(function(item) {
-      var chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'suggest-chip';
-      chip.textContent = item;
-      bindSuggestionChip(chip, item);
-      suggestRow.appendChild(chip);
-    });
+    renderSuggestionItems(suggestions);
   }
 
   applyTheme(getInitialTheme(), false);
@@ -1657,6 +1657,9 @@ try {
     } finally {
       hideWorkingMessage();
       orbAv.classList.remove('think');
+      if (!chatIn.value.trim()) {
+        showRandomSuggestions();
+      }
     }
   }
 
