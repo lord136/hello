@@ -792,7 +792,7 @@ try {
   var workingTimer = null;
   var textLoadProgress = {};
   var firstLocalReplyDone = false;
-  var MODEL_FALLBACK_MS = 12000;
+  var MODEL_FALLBACK_MS = 20000;
   var defaultAnswerModel = 'Raghav Beta';
   var modelConfigs = {
     'Raghav Beta': {
@@ -867,23 +867,23 @@ try {
     var term = extractDefinitionTerm(sourceText || '') || (sourceText || '').trim();
     if (lane === 'Definition' && term) {
       return [
-        'Explain ' + term + ' simply',
-        'Give an example of ' + term,
-        'Why does ' + term + ' matter'
+        'Explain ' + term + ' in simple words',
+        'Give me a real example of ' + term,
+        'Why does ' + term + ' matter in real life'
       ];
     }
     if (lane === 'Reference') {
       return [
-        'Summarize ' + sourceText,
+        'Summarize ' + sourceText + ' simply',
         'Tell me the key points of ' + sourceText,
-        'Why is this important'
+        'Why is ' + sourceText + ' important'
       ];
     }
     if (lane === 'Reasoning') {
       return [
-        'Give me steps',
-        'Make it simpler',
-        'What should I do first'
+        'Give me step by step advice for this: ' + sourceText,
+        'Make this simpler for me: ' + sourceText,
+        'What should I do first about this: ' + sourceText
       ];
     }
     if (lane === 'Weather') {
@@ -1027,6 +1027,9 @@ try {
     if (!localGenerator && textWarmupInFlight) {
       var loadingMeta = [];
       if (progress !== null && progress < 100) loadingMeta.push('Download ' + progress + '%');
+      if (progress !== null && progress >= 80 && progress < 100) {
+        return "Raghav Beta is almost ready on this phone. Finishing the last part of your private reasoning setup." + (loadingMeta.length ? ' ' + loadingMeta.join(' • ') + '.' : '');
+      }
       return "Thanks for waiting. Raghav AI is preparing a private experience on your phone so your answers stay free and personal." + (loadingMeta.length ? ' ' + loadingMeta.join(' • ') + '.' : '');
     }
 
@@ -1081,7 +1084,7 @@ try {
     }
     if (text.toLowerCase().indexOf('open ') === 0) return false;
     if (cleaned.split(' ').length < 3) return false;
-    return /\b(strategy|improve|better|daily|habit|routine|confidence|discipline|focus|overthinking|plan|compare|choose|decision|decide|help me|what should i do|should i|steps|step by step|deal with|handle|solve|fix|situation|stressed|anxious|confused|advice|learn|explain simply)\b/.test(cleaned);
+    return /\b(strategy|improve|better|daily|habit|routine|confidence|discipline|focus|overthinking|plan|compare|choose|decision|decide|help me|what should i do|should i|steps|step by step|deal with|handle|solve|fix|situation|stressed|anxious|confused|advice|learn|explain simply|simple words|example|real example|matter in real life|summarize|summary|key points|important|what should i do first|make this simpler)\b/.test(cleaned);
   }
 
   function classifyReplyLane(text) {
@@ -1676,6 +1679,10 @@ try {
 
   async function getModelOrSearchResponse(text) {
     try {
+      var shouldWaitForLocalOnly = !firstLocalReplyDone || !localGenerator;
+      if (shouldWaitForLocalOnly) {
+        return await getLocalModelResponse(text);
+      }
       return await Promise.race([
         getLocalModelResponse(text),
         new Promise(function(resolve, reject) {
@@ -1693,6 +1700,9 @@ try {
       var sectorResult = await getSectorAnswer(text);
       if (sectorResult) {
         return maybeAddPatienceLine(sectorResult, Date.now() - 3201);
+      }
+      if (isReasoningQuery(text) || !firstLocalReplyDone || !localGenerator) {
+        return "Raghav Beta is still getting ready on this phone. Keep it open for a moment and ask again here. I won’t throw you out to the web for this.";
       }
       triggerGoogleSearch(text);
       return "Thanks for waiting. I’m opening a quick web answer for you now so you do not lose time.";
