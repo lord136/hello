@@ -651,9 +651,9 @@ try {
   function applySuggestion(item) {
     chatIn.value = item;
     resizeComposer();
-    updateSuggestions();
+    hideSuggestions();
     requestAnimationFrame(function() {
-      chatIn.focus();
+      handleSend();
     });
   }
 
@@ -971,7 +971,7 @@ try {
   }
 
   function shouldUseLocalModel(text) {
-    if (isMobileDevice && (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text))) return false;
+    if (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text) || looksLikeBookOrAuthorQuery(text) || extractWeatherLocation(text)) return false;
     for (var i = 0; i < intents.length; i++) {
       if (text.match(intents[i].p)) return false;
     }
@@ -1110,6 +1110,140 @@ try {
   function isDeepHistoryQuery(text) {
     var cleaned = normalizeIntentText(text);
     return looksLikeHistoryOrLiterature(text) && (cleaned.split(' ').length >= 9 || /\b(explain|why|how|timeline|causes|impact|history of|deep|details|in detail)\b/.test(cleaned));
+  }
+
+  function looksLikeBookOrAuthorQuery(text) {
+    var cleaned = normalizeIntentText(text);
+    return /\b(book|novel|poem|poet|author|writer|literature|story|play|book by|author of)\b/.test(cleaned);
+  }
+
+  function extractDefinitionTerm(text) {
+    var raw = (text || '').trim().replace(/[?]+$/,'');
+    var patterns = [
+      /^(?:what is|who is|what was)\s+(.+)$/i,
+      /^(?:define|definition of|meaning of)\s+(.+)$/i,
+      /^(?:what does)\s+(.+?)\s+(?:mean)$/i
+    ];
+
+    for (var i = 0; i < patterns.length; i++) {
+      var match = raw.match(patterns[i]);
+      if (!match || !match[1]) continue;
+      var term = match[1].trim().replace(/^(a|an|the)\s+/i, '');
+      if (!term) continue;
+      if (term.split(/\s+/).length > 4) return null;
+      return term;
+    }
+
+    return null;
+  }
+
+  async function getDictionaryAnswer(text) {
+    if (window.location.protocol === 'file:') return null;
+    var term = extractDefinitionTerm(text);
+    if (!term) return null;
+
+    try {
+      var response = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(term), {
+        headers: { accept: 'application/json' }
+      });
+      if (!response.ok) return null;
+      var data = await response.json();
+      var entry = Array.isArray(data) ? data[0] : null;
+      var meaning = entry && entry.meanings && entry.meanings[0];
+      var definition = meaning && meaning.definitions && meaning.definitions[0] && meaning.definitions[0].definition;
+      if (!definition) return null;
+      var label = entry.word || term;
+      return sanitizeModelReply(label + ' means ' + definition);
+    } catch(e) {
+      return null;
+    }
+  }
+
+  async function getOpenLibraryAnswer(text) {
+    if (window.location.protocol === 'file:') return null;
+    if (!looksLikeBookOrAuthorQuery(text)) return null;
+
+    try {
+      var response = await fetch('https://openlibrary.org/search.json?limit=1&q=' + encodeURIComponent(text), {
+        headers: { accept: 'application/json' }
+      });
+      if (!response.ok) return null;
+      var data = await response.json();
+      var doc = data && data.docs && data.docs[0];
+      if (!doc) return null;
+      var title = doc.title || 'This work';
+      var author = doc.author_name && doc.author_name[0];
+      var year = doc.first_publish_year;
+      var fragments = [title];
+      if (author) fragments.push('by ' + author);
+      if (year) fragments.push('first published in ' + year);
+      return sanitizeModelReply(fragments.join(', ') + '.');
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function extractWeatherLocation(text) {
+    var raw = (text || '').trim();
+    var match = raw.match(/\b(?:weather|forecast)(?:\s+(?:in|for|at))\s+(.+)$/i);
+    if (!match || !match[1]) return null;
+    return match[1].trim().replace(/[?]+$/,'');
+  }
+
+  async function getWeatherAnswer(text) {
+    if (window.location.protocol === 'file:') return null;
+    var location = extractWeatherLocation(text);
+    if (!location) return null;
+
+    try {
+      var geoResponse = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(location), {
+        headers: { accept: 'application/json' }
+      });
+      if (!geoResponse.ok) return null;
+      var geoData = await geoResponse.json();
+      var place = geoData && geoData.results && geoData.results[0];
+      if (!place) return null;
+
+      var forecastResponse = await fetch(
+        'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(place.latitude) +
+        '&longitude=' + encodeURIComponent(place.longitude) +
+        '&current=temperature_2m,apparent_temperature&timezone=auto',
+        { headers: { accept: 'application/json' } }
+      );
+      if (!forecastResponse.ok) return null;
+      var forecastData = await forecastResponse.json();
+      var current = forecastData && forecastData.current;
+      if (!current || current.temperature_2m === undefined) return null;
+
+      var feelsLike = current.apparent_temperature !== undefined ? ', feels like ' + Math.round(current.apparent_temperature) + '°C' : '';
+      return sanitizeModelReply('Right now in ' + (place.name || location) + ' it is about ' + Math.round(current.temperature_2m) + '°C' + feelsLike + '.');
+    } catch(e) {
+      return null;
+    }
+  }
+
+  async function getSectorAnswer(text) {
+    var weatherResult = await getWeatherAnswer(text);
+    if (weatherResult) return weatherResult;
+
+    var dictionaryResult = await getDictionaryAnswer(text);
+    if (dictionaryResult) return dictionaryResult;
+
+    var libraryResult = await getOpenLibraryAnswer(text);
+    if (libraryResult) return libraryResult;
+
+    if (looksLikeHistoryOrLiterature(text)) {
+      var referenceResult = await getHistoricalReferenceAnswer(text);
+      if (referenceResult) {
+        if (isDeepHistoryQuery(text)) {
+          triggerReferencePage(text, referenceResult.title);
+          return "I’m opening a trusted reference page for you now so you can go straight to the details.";
+        }
+        return shortenReferenceText(referenceResult.extract);
+      }
+    }
+
+    return null;
   }
 
   function shortenReferenceText(text) {
@@ -1399,12 +1533,6 @@ try {
 
   async function getModelOrSearchResponse(text) {
     try {
-      if (!firstLocalReplyDone) {
-        return await getLocalModelResponse(text);
-      }
-      if (shouldStayInChat(text)) {
-        return await getLocalModelResponse(text);
-      }
       return await Promise.race([
         getLocalModelResponse(text),
         new Promise(function(resolve, reject) {
@@ -1419,18 +1547,9 @@ try {
       if (e && e.code === 'LOCAL_SERVER_REQUIRED') {
         return "Raghav AI needs to be opened through a local server to run on-device replies properly. Once it's opened through localhost, I'll answer right here.";
       }
-      var shouldUseReference = (e && e.code === 'MODEL_TIMEOUT') || looksLikeHistoryOrLiterature(text) || isDefinitionQuery(text);
-      if (shouldUseReference) {
-        var referenceResult = await getHistoricalReferenceAnswer(text);
-        if (referenceResult) {
-          if (isDeepHistoryQuery(text)) {
-            triggerReferencePage(text, referenceResult.title);
-            return "Thanks for waiting. I’m opening a trusted reference page for you now so you can go straight to the details.";
-          }
-          if (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text)) {
-            return maybeAddPatienceLine(shortenReferenceText(referenceResult.extract), Date.now() - 3201);
-          }
-        }
+      var sectorResult = await getSectorAnswer(text);
+      if (sectorResult) {
+        return maybeAddPatienceLine(sectorResult, Date.now() - 3201);
       }
       triggerGoogleSearch(text);
       return "Thanks for waiting. I’m opening a quick web answer for you now so you do not lose time.";
@@ -1484,19 +1603,11 @@ try {
   ];
 
   async function getResponse(text){
-    if (isMobileDevice && (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text))) {
-      var fastReference = await getHistoricalReferenceAnswer(text);
-      if (fastReference) {
-        if (isDeepHistoryQuery(text)) {
-          triggerReferencePage(text, fastReference.title);
-          return "I’m opening a trusted reference page for you now so you can go straight to the details.";
-        }
-        return shortenReferenceText(fastReference.extract);
-      }
-    }
-
     var knownCommandReply = explainKnownCommand(text);
     if (knownCommandReply) return knownCommandReply;
+
+    var sectorReply = await getSectorAnswer(text);
+    if (sectorReply) return sectorReply;
 
     var directRoute = classifyDirectRoute(text);
     if (directRoute) {
