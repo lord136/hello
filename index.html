@@ -101,6 +101,10 @@ canvas#bg{position:fixed;top:0;left:0;z-index:0;pointer-events:none}
 .msg:hover .msg-copy,.msg-copy.show{opacity:1;transform:none}
 .msg-copy svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .msg-copy.copied{background:#fff;color:#000}
+.msg-tag{display:inline-flex;align-items:center;width:max-content;margin-bottom:6px;padding:4px 10px;border-radius:999px;background:rgba(37,99,235,.14);border:1px solid rgba(96,165,250,.22);font-size:.62rem;letter-spacing:.9px;text-transform:uppercase;color:rgba(191,219,254,.92)}
+.follow-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;max-width:82%}
+.follow-chip{padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:rgba(255,255,255,.78);font-size:.72rem;line-height:1;cursor:pointer;font-family:inherit;transition:background .18s ease,color .18s ease,border-color .18s ease}
+.follow-chip:hover{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.16)}
 .cursor-blink{display:inline-block;width:2px;height:.85em;background:rgba(255,255,255,.45);border-radius:1px;vertical-align:middle;margin-left:3px;animation:blink .7s step-end infinite}
 .dots-wrap{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);border-radius:20px;border-top-left-radius:5px;padding:14px 18px;animation:popIn .3s ease;display:inline-block}
 .dots{display:flex;gap:4px}
@@ -260,6 +264,9 @@ body[data-theme="light"] .px-send{background:#d9e0eb;color:#08111f}
 body[data-theme="light"] .px-bar:focus-within .px-send{background:#08111f;color:#fff}
 body[data-theme="light"] .msg.a .bbl{color:#08111f;background:rgba(255,255,255,.92)}
 body[data-theme="light"] .msg-copy{background:rgba(15,23,42,.04);color:rgba(8,17,31,.62);border-color:rgba(15,23,42,.08)}
+body[data-theme="light"] .msg-tag{background:rgba(37,99,235,.08);border-color:rgba(37,99,235,.14);color:#1d4ed8}
+body[data-theme="light"] .follow-chip{background:rgba(8,17,31,.05);color:rgba(8,17,31,.72);border-color:rgba(15,23,42,.08)}
+body[data-theme="light"] .follow-chip:hover{background:rgba(8,17,31,.1);color:#08111f;border-color:rgba(15,23,42,.14)}
 body[data-theme="light"] .dots-wrap{background:rgba(15,23,42,.05);border-color:rgba(15,23,42,.08)}
 body[data-theme="light"] .dots span{background:rgba(8,17,31,.42)}
 body[data-theme="light"] .pop-item{color:rgba(8,17,31,.78)}
@@ -841,6 +848,72 @@ try {
     return copyBtn;
   }
 
+  function makeRouteTag(label) {
+    if (!label) return null;
+    var tag = document.createElement('div');
+    tag.className = 'msg-tag';
+    tag.textContent = label;
+    return tag;
+  }
+
+  function submitFollowupPrompt(prompt) {
+    if (!prompt) return;
+    chatIn.value = prompt;
+    resizeComposer();
+    handleSend();
+  }
+
+  function getFollowupPrompts(lane, sourceText) {
+    var term = extractDefinitionTerm(sourceText || '') || (sourceText || '').trim();
+    if (lane === 'Definition' && term) {
+      return [
+        'Explain ' + term + ' simply',
+        'Give an example of ' + term,
+        'Why does ' + term + ' matter'
+      ];
+    }
+    if (lane === 'Reference') {
+      return [
+        'Summarize ' + sourceText,
+        'Tell me the key points of ' + sourceText,
+        'Why is this important'
+      ];
+    }
+    if (lane === 'Reasoning') {
+      return [
+        'Give me steps',
+        'Make it simpler',
+        'What should I do first'
+      ];
+    }
+    if (lane === 'Weather') {
+      return [
+        'Weather in Delhi',
+        'Weather in Mumbai',
+        'Weather tomorrow'
+      ];
+    }
+    return [];
+  }
+
+  function appendFollowupChips(row, lane, sourceText) {
+    var prompts = getFollowupPrompts(lane, sourceText);
+    if (!prompts.length) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'follow-row';
+    prompts.forEach(function(prompt) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'follow-chip';
+      chip.textContent = prompt;
+      chip.addEventListener('click', function() {
+        submitFollowupPrompt(prompt);
+      });
+      wrap.appendChild(chip);
+    });
+    row.appendChild(wrap);
+  }
+
   function addUserMsg(text){
     var row=document.createElement('div'); row.className='msg u';
     var body=document.createElement('div'); body.className='msg-body';
@@ -868,10 +941,15 @@ try {
     }
   }
 
-  function showDots(){
+  function showDots(lane){
     orbAv.classList.add('think');
     var row=document.createElement('div'); row.className='msg a'; row.id='typingRow';
-    row.innerHTML='<div class="dots-wrap"><div class="dots"><span></span><span></span><span></span></div></div>';
+    var tag = makeRouteTag(lane || 'Thinking');
+    if (tag) row.appendChild(tag);
+    var wrap = document.createElement('div');
+    wrap.className = 'dots-wrap';
+    wrap.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+    row.appendChild(wrap);
     chatLog.appendChild(row); scrollChatToLatest();
   }
   function hideDots(){
@@ -879,20 +957,22 @@ try {
     var el=document.getElementById('typingRow'); if(el) el.remove();
   }
 
-  function streamReply(text){
+  function streamReply(text, lane, sourceText){
     return new Promise(function(resolve){
       var row=document.createElement('div'); row.className='msg a';
+      var tag = makeRouteTag(lane);
       var body=document.createElement('div'); body.className='msg-body';
       var b=document.createElement('div'); b.className='bbl';
       var copyBtn=makeCopyButton(text);
       var ts=document.createElement('div'); ts.className='stamp'; ts.textContent=getTime();
+      if (tag) row.appendChild(tag);
       body.appendChild(b);
       body.appendChild(copyBtn);
       row.appendChild(body); row.appendChild(ts); chatLog.appendChild(row);
       scrollChatToLatest();
       var words=text.split(' '), wi=0;
       function next(){
-        if(wi>=words.length){ b.innerHTML=text; scrollChatToLatest(); haptic([8,30,8]); resolve(); return; }
+        if(wi>=words.length){ b.innerHTML=text; appendFollowupChips(row, lane, sourceText); scrollChatToLatest(); haptic([8,30,8]); resolve(); return; }
         b.innerHTML=words.slice(0,wi+1).join(' ')+'<span class="cursor-blink"></span>';
         scrollChatToLatest(true); wi++;
         setTimeout(next, 25+Math.random()*25);
@@ -988,12 +1068,29 @@ try {
   }
 
   function shouldUseLocalModel(text) {
-    if (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text) || looksLikeBookOrAuthorQuery(text) || extractWeatherLocation(text)) return false;
+    return isReasoningQuery(text);
+  }
+
+  function isReasoningQuery(text) {
+    var cleaned = normalizeIntentText(text);
+    if (!cleaned) return false;
+    if (isDefinitionQuery(text) || looksLikeHistoryOrLiterature(text) || looksLikeBookOrAuthorQuery(text) || extractWeatherLocation(text) || isCommandLikeInput(text)) return false;
+    if (classifyDirectRoute(text)) return false;
     for (var i = 0; i < intents.length; i++) {
       if (text.match(intents[i].p)) return false;
     }
     if (text.toLowerCase().indexOf('open ') === 0) return false;
-    return text.split(' ').length > 1 || /(how|what|why|who|where|when|can you|explain)\b/i.test(text);
+    if (cleaned.split(' ').length < 3) return false;
+    return /\b(strategy|improve|better|daily|habit|routine|confidence|discipline|focus|overthinking|plan|compare|choose|decision|decide|help me|what should i do|should i|steps|step by step|deal with|handle|solve|fix|situation|stressed|anxious|confused|advice|learn|explain simply)\b/.test(cleaned);
+  }
+
+  function classifyReplyLane(text) {
+    if (classifyDirectRoute(text)) return 'Action';
+    if (extractWeatherLocation(text)) return 'Weather';
+    if (isDefinitionQuery(text)) return 'Definition';
+    if (looksLikeHistoryOrLiterature(text) || looksLikeBookOrAuthorQuery(text)) return 'Reference';
+    if (isReasoningQuery(text)) return 'Reasoning';
+    return 'Answer';
   }
 
   function getEffectiveModel() {
@@ -1154,7 +1251,31 @@ try {
     return null;
   }
 
+  var localDefinitionMap = {
+    gpu: 'A GPU is a graphics processing unit, a chip designed to handle visuals and many calculations in parallel.',
+    cpu: 'A CPU is the main processor of a device. It handles instructions, logic, and general computing tasks.',
+    ram: 'RAM is short-term working memory. It stores the data your device is actively using right now.',
+    api: 'An API is a way for one software system to talk to another and exchange data or actions.',
+    programming: 'Programming means writing instructions that tell a computer what to do.',
+    algorithm: 'An algorithm is a step-by-step method for solving a problem or completing a task.',
+    database: 'A database is an organized system for storing, managing, and retrieving information.',
+    variable: 'A variable is a named place where a program stores a value for later use.',
+    function: 'A function is a reusable block of code that performs one specific job.',
+    server: 'A server is a system that provides data, services, or files to other devices.',
+    internet: 'The internet is a global network that connects computers and devices so they can share information.',
+    cloud: 'Cloud means using remote internet-based servers and services instead of only your own device.'
+  };
+
+  function getLocalDefinitionAnswer(text) {
+    var term = extractDefinitionTerm(text);
+    if (!term) return null;
+    var normalizedTerm = normalizeIntentText(term);
+    return localDefinitionMap[normalizedTerm] || null;
+  }
+
   async function getDictionaryAnswer(text) {
+    var localDefinition = getLocalDefinitionAnswer(text);
+    if (localDefinition) return localDefinition;
     if (window.location.protocol === 'file:') return null;
     var term = extractDefinitionTerm(text);
     if (!term) return null;
@@ -1245,6 +1366,11 @@ try {
 
     var dictionaryResult = await getDictionaryAnswer(text);
     if (dictionaryResult) return dictionaryResult;
+
+    if (isDefinitionQuery(text)) {
+      var definitionReference = await getHistoricalReferenceAnswer(extractDefinitionTerm(text) || text);
+      if (definitionReference) return shortenReferenceText(definitionReference.extract);
+    }
 
     var libraryResult = await getOpenLibraryAnswer(text);
     if (libraryResult) return libraryResult;
@@ -1626,6 +1752,10 @@ try {
     var sectorReply = await getSectorAnswer(text);
     if (sectorReply) return sectorReply;
 
+    if (isDefinitionQuery(text)) {
+      return "I couldn’t fetch that definition cleanly yet. Try a shorter term and I’ll keep it in chat for you.";
+    }
+
     var directRoute = classifyDirectRoute(text);
     if (directRoute) {
       mobileOpen(directRoute.url);
@@ -1641,8 +1771,12 @@ try {
       mobileOpen('https://www.google.com/search?q=' + encodeURIComponent(target));
       return 'Opening search for '+target+'.';
     }
-    if(localGenerator || text.split(' ').length>1 || /(how|what|why|who|where|when|can you|explain)\b/i.test(text)){
+    if (isReasoningQuery(text)) {
       return await getModelOrSearchResponse(text);
+    }
+    if (text.split(' ').length > 1 || /(how|what|why|who|where|when|can you|explain)\b/i.test(text)) {
+      triggerGoogleSearch(text);
+      return "I’m opening a quick web answer for you now so you do not lose time.";
     }
     var fb=["Could you be more specific? I can search, message, or set reminders.",
       "I'm listening. Try asking me to look something up or message someone.",
@@ -1656,6 +1790,7 @@ try {
     if(!val) return;
     var userText = val;
     var processedText = normalizeUserText(userText);
+    var replyLane = classifyReplyLane(processedText);
     var useLocalModel = shouldUseLocalModel(processedText);
     var isFirstReply = useLocalModel && !firstLocalReplyDone;
     chatIn.value=''; chatIn.style.height='auto';
@@ -1665,14 +1800,16 @@ try {
     if (useLocalModel) {
       showWorkingMessage({ fallbackMs: isFirstReply ? 0 : MODEL_FALLBACK_MS, isFirstReply: isFirstReply });
     } else {
-      orbAv.classList.add('think');
+      showDots(replyLane);
     }
     try {
       var resp = await getResponse(processedText);
       if (useLocalModel) hideWorkingMessage();
-      await streamReply(resp);
+      else hideDots();
+      await streamReply(resp, replyLane, processedText);
     } finally {
       hideWorkingMessage();
+      hideDots();
       orbAv.classList.remove('think');
       if (!chatIn.value.trim()) {
         showRandomSuggestions();
