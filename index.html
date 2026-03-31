@@ -537,32 +537,37 @@ try {
   var systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
   var SUN_ICON = '<circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
   var MOON_ICON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>';
-  var suggestionCatalog = [
-    'what is programming',
-    'meaning of democracy',
-    'definition of empathy',
-    'meaning of discipline',
-    'what is self respect',
-    'history of the internet',
-    'history of chess',
-    'who is Abdul Kalam',
-    'who is Mahatma Gandhi',
-    'book by Premchand',
-    'book by Tolkien',
-    'author of Hamlet',
-    'weather in Delhi',
-    'weather in Mumbai',
-    'weather in New York',
-    'blue jeans from Amazon',
-    'running shoes for men',
-    'best computers under 50000',
-    'best phone under 20000',
-    'best headphones for travel',
-    'how to make biryani',
-    'recipe for cold coffee',
-    'recipe for pasta',
-    'message my mom I will be late'
-  ];
+  var suggestionBuckets = {
+    strategy: [
+      'strategy to become more confident',
+      'how to think more clearly',
+      'steps to become disciplined',
+      'how to stop overthinking',
+      'strategy to improve focus',
+      'how to build self respect'
+    ],
+    daily: [
+      'how to improve daily',
+      'daily steps to stay focused',
+      'small habits to improve every day',
+      'how to build a better routine',
+      'how to become better each day',
+      'daily plan to stay consistent'
+    ],
+    definition: [
+      'meaning of GPU',
+      'what is programming',
+      'definition of empathy',
+      'meaning of discipline',
+      'what is critical thinking',
+      'what is self respect'
+    ]
+  };
+  var suggestionCatalog = [].concat(
+    suggestionBuckets.strategy,
+    suggestionBuckets.daily,
+    suggestionBuckets.definition
+  );
   var suggestionDisplayCount = 3;
 
   function shuffleList(items) {
@@ -662,8 +667,20 @@ try {
     });
   }
 
+  function pickRandomSuggestion(items) {
+    return items[Math.floor(Math.random() * items.length)];
+  }
+
+  function getRandomSuggestionSet() {
+    return shuffleList([
+      pickRandomSuggestion(suggestionBuckets.strategy),
+      pickRandomSuggestion(suggestionBuckets.daily),
+      pickRandomSuggestion(suggestionBuckets.definition)
+    ]);
+  }
+
   function showRandomSuggestions() {
-    renderSuggestionItems(shuffleList(suggestionCatalog).slice(0, suggestionDisplayCount));
+    renderSuggestionItems(getRandomSuggestionSet());
   }
 
   function applySuggestion(item) {
@@ -696,7 +713,7 @@ try {
     var corrected = normalizeUserText(raw);
 
     if (!raw) {
-      suggestions = shuffleList(suggestionCatalog).slice(0, suggestionDisplayCount);
+      suggestions = getRandomSuggestionSet();
       renderSuggestionItems(suggestions);
       return;
     }
